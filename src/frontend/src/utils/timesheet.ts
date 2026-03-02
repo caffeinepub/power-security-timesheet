@@ -1,8 +1,83 @@
 /**
- * Calculate hours worked from clock-in and clock-out times.
- * @param clockIn  "HH:MM" 24-hour format
- * @param clockOut "HH:MM" 24-hour format
- * @returns decimal hours, rounded to 2 decimal places
+ * Parse a time string in various formats to minutes since midnight.
+ * Supports: "7:30 PM", "3:30 AM", "08:00", "8:00 AM", "1400", "14:00"
+ * Returns null if unparseable.
+ */
+export function parseTimeToMinutes(timeStr: string): number | null {
+  if (!timeStr || !timeStr.trim()) return null;
+  const s = timeStr.trim().toUpperCase();
+
+  // Try 12-hour format: "7:30 PM", "3:30 AM", "12:00 PM", "8 AM"
+  const twelveHour = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (twelveHour) {
+    let h = Number.parseInt(twelveHour[1], 10);
+    const m = Number.parseInt(twelveHour[2] ?? "0", 10);
+    const period = twelveHour[3];
+    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+    if (period === "AM") {
+      if (h === 12) h = 0;
+    } else {
+      if (h !== 12) h += 12;
+    }
+    return h * 60 + m;
+  }
+
+  // Try 24-hour format: "14:00", "08:00", "0800"
+  const twentyFourColon = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourColon) {
+    const h = Number.parseInt(twentyFourColon[1], 10);
+    const m = Number.parseInt(twentyFourColon[2], 10);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  }
+
+  const twentyFourFour = s.match(/^(\d{2})(\d{2})$/);
+  if (twentyFourFour) {
+    const h = Number.parseInt(twentyFourFour[1], 10);
+    const m = Number.parseInt(twentyFourFour[2], 10);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return h * 60 + m;
+  }
+
+  return null;
+}
+
+/**
+ * Calculate hours between two time strings, handling overnight shifts.
+ * Subtracts lunch break if both lunchOut and lunchIn are provided.
+ * Returns null if times are invalid.
+ */
+export function calcRowHours(
+  workStart: string,
+  workEnd: string,
+  lunchOut?: string,
+  lunchIn?: string,
+): number | null {
+  const startMin = parseTimeToMinutes(workStart);
+  const endMin = parseTimeToMinutes(workEnd);
+  if (startMin === null || endMin === null) return null;
+
+  let totalMin = endMin - startMin;
+  // Handle overnight: if end is before start, add 24h
+  if (totalMin <= 0) totalMin += 24 * 60;
+
+  // Subtract lunch break if provided
+  if (lunchOut && lunchIn) {
+    const lunchOutMin = parseTimeToMinutes(lunchOut);
+    const lunchInMin = parseTimeToMinutes(lunchIn);
+    if (lunchOutMin !== null && lunchInMin !== null) {
+      let lunchBreak = lunchInMin - lunchOutMin;
+      if (lunchBreak < 0) lunchBreak += 24 * 60;
+      totalMin -= lunchBreak;
+    }
+  }
+
+  if (totalMin < 0) return 0;
+  return Math.round(totalMin * 100) / 6000; // Convert minutes to hours, 2 decimal places
+}
+
+/**
+ * Calculate hours worked from clock-in and clock-out times (legacy, HH:MM format).
  */
 export function calcHours(clockIn: string, clockOut: string): number {
   if (!clockIn || !clockOut) return 0;
@@ -54,6 +129,15 @@ export function formatDate(dateStr: string): string {
 }
 
 /**
+ * Format a date string YYYY-MM-DD to MM/DD/YYYY format.
+ */
+export function formatDateUS(dateStr: string): string {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}/${year}`;
+}
+
+/**
  * Format time "HH:MM" to 12-hour format with AM/PM.
  */
 export function formatTime(timeStr: string): string {
@@ -69,4 +153,50 @@ export function formatTime(timeStr: string): string {
  */
 export function todayISO(): string {
   return new Date().toISOString().split("T")[0];
+}
+
+/**
+ * Get the Monday (pay period start) of the current or most recent biweek.
+ */
+export function getCurrentPayPeriodStart(): string {
+  const today = new Date();
+  const day = today.getDay(); // 0=Sun
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(today);
+  monday.setDate(diff);
+  return monday.toISOString().split("T")[0];
+}
+
+/**
+ * Get the Sunday 13 days after the pay period start.
+ */
+export function getPayPeriodEnd(startDate: string): string {
+  if (!startDate) return "";
+  const start = new Date(startDate);
+  start.setDate(start.getDate() + 13);
+  return start.toISOString().split("T")[0];
+}
+
+/**
+ * Given a pay period start (Monday), compute the dates for all 14 days (7 per week).
+ */
+export function getPayPeriodDates(startDate: string): {
+  week1: string[];
+  week2: string[];
+} {
+  if (!startDate) return { week1: [], week2: [] };
+  const start = new Date(startDate);
+  const week1: string[] = [];
+  const week2: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    week1.push(d.toISOString().split("T")[0]);
+  }
+  for (let i = 7; i < 14; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    week2.push(d.toISOString().split("T")[0]);
+  }
+  return { week1, week2 };
 }

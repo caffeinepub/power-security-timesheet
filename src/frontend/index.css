@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -18,61 +20,84 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Crimson Pro";
+  src: url("/assets/fonts/CrimsonPro-Variable.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Crimson Pro";
+  src: url("/assets/fonts/CrimsonPro-Italic-Variable.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
 @layer base {
   :root {
-    --radius: 0.5rem;
+    --radius: 0.25rem;
 
-    /* Power Security — Dark industrial theme with amber accents */
-    --background: 0.14 0.01 250;
-    --foreground: 0.94 0.01 250;
+    /* Power Security Timesheet — Clean paper/document theme */
+    --background: 1.0 0 0;
+    --foreground: 0.12 0.005 250;
 
-    --card: 0.18 0.015 250;
-    --card-foreground: 0.94 0.01 250;
+    --card: 1.0 0 0;
+    --card-foreground: 0.12 0.005 250;
 
-    --popover: 0.2 0.015 250;
-    --popover-foreground: 0.94 0.01 250;
+    --popover: 1.0 0 0;
+    --popover-foreground: 0.12 0.005 250;
 
-    --primary: 0.78 0.16 65;
-    --primary-foreground: 0.12 0.01 250;
+    /* Navy blue — professional, security-appropriate */
+    --primary: 0.28 0.08 250;
+    --primary-foreground: 1.0 0 0;
 
-    --secondary: 0.24 0.02 250;
-    --secondary-foreground: 0.88 0.01 250;
+    --secondary: 0.95 0.005 250;
+    --secondary-foreground: 0.2 0.01 250;
 
-    --muted: 0.22 0.015 250;
-    --muted-foreground: 0.6 0.02 250;
+    --muted: 0.96 0.004 250;
+    --muted-foreground: 0.45 0.02 250;
 
-    --accent: 0.78 0.16 65;
-    --accent-foreground: 0.12 0.01 250;
+    --accent: 0.94 0.006 250;
+    --accent-foreground: 0.2 0.01 250;
 
-    --destructive: 0.58 0.22 27;
-    --destructive-foreground: 0.97 0.01 0;
+    --destructive: 0.52 0.22 25;
+    --destructive-foreground: 1.0 0 0;
 
-    --border: 0.28 0.02 250;
-    --input: 0.24 0.02 250;
-    --ring: 0.78 0.16 65;
+    --border: 0.82 0.01 250;
+    --input: 0.88 0.008 250;
+    --ring: 0.28 0.08 250;
 
-    /* Status colors */
-    --status-pending: 0.78 0.18 75;
-    --status-pending-bg: 0.22 0.05 75;
-    --status-approved: 0.72 0.18 145;
-    --status-approved-bg: 0.2 0.05 145;
-    --status-rejected: 0.62 0.22 25;
-    --status-rejected-bg: 0.22 0.06 25;
+    /* Table header dark */
+    --table-header: 0.18 0.01 250;
+    --table-header-foreground: 1.0 0 0;
+    --table-subheader: 0.3 0.02 250;
+    --table-subheader-foreground: 1.0 0 0;
 
-    --chart-1: 0.78 0.16 65;
-    --chart-2: 0.72 0.18 145;
-    --chart-3: 0.62 0.22 25;
-    --chart-4: 0.65 0.18 250;
-    --chart-5: 0.7 0.16 290;
+    --chart-1: 0.28 0.08 250;
+    --chart-2: 0.52 0.22 25;
+    --chart-3: 0.55 0.18 145;
+    --chart-4: 0.6 0.15 65;
+    --chart-5: 0.5 0.12 290;
 
-    --sidebar: 0.12 0.01 250;
-    --sidebar-foreground: 0.94 0.01 250;
-    --sidebar-primary: 0.78 0.16 65;
-    --sidebar-primary-foreground: 0.12 0.01 250;
-    --sidebar-accent: 0.22 0.015 250;
-    --sidebar-accent-foreground: 0.94 0.01 250;
-    --sidebar-border: 0.28 0.02 250;
-    --sidebar-ring: 0.78 0.16 65;
+    --sidebar: 0.97 0.004 250;
+    --sidebar-foreground: 0.12 0.005 250;
+    --sidebar-primary: 0.28 0.08 250;
+    --sidebar-primary-foreground: 1.0 0 0;
+    --sidebar-accent: 0.94 0.006 250;
+    --sidebar-accent-foreground: 0.2 0.01 250;
+    --sidebar-border: 0.82 0.01 250;
+    --sidebar-ring: 0.28 0.08 250;
   }
 
   * {
@@ -80,7 +105,7 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
@@ -98,28 +123,330 @@
 }
 
 @layer components {
-  .status-badge-pending {
-    background-color: oklch(var(--status-pending-bg));
-    color: oklch(var(--status-pending));
-    border: 1px solid oklch(var(--status-pending) / 0.3);
+  /* Timesheet form table styles */
+  .ts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    font-family: "Satoshi", sans-serif;
   }
 
-  .status-badge-approved {
-    background-color: oklch(var(--status-approved-bg));
-    color: oklch(var(--status-approved));
-    border: 1px solid oklch(var(--status-approved) / 0.3);
+  .ts-table th,
+  .ts-table td {
+    border: 1px solid oklch(0.7 0.01 250);
+    padding: 4px 6px;
+    text-align: center;
+    vertical-align: middle;
   }
 
-  .status-badge-rejected {
-    background-color: oklch(var(--status-rejected-bg));
-    color: oklch(var(--status-rejected));
-    border: 1px solid oklch(var(--status-rejected) / 0.3);
+  .ts-table th {
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background-color: oklch(0.3 0.02 250);
+    color: oklch(1.0 0 0);
   }
 
-  .grid-texture {
-    background-image:
-      linear-gradient(oklch(0.28 0.02 250 / 0.4) 1px, transparent 1px),
-      linear-gradient(90deg, oklch(0.28 0.02 250 / 0.4) 1px, transparent 1px);
-    background-size: 32px 32px;
+  .ts-table td.location-cell {
+    text-align: left;
+    min-width: 90px;
+  }
+
+  .ts-table td.hours-cell {
+    font-family: "Geist Mono", monospace;
+    font-weight: 700;
+    font-size: 0.85rem;
+    min-width: 70px;
+  }
+
+  .ts-table .week-header-row td {
+    background-color: oklch(0.18 0.01 250);
+    color: oklch(1.0 0 0);
+    font-family: "Cabinet Grotesk", sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-align: left;
+    padding: 8px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .ts-table .total-row td {
+    background-color: oklch(0.95 0.005 250);
+    font-weight: 700;
+    text-align: right;
+    font-family: "Geist Mono", monospace;
+  }
+
+  .ts-table .total-row td:last-child {
+    font-size: 0.95rem;
+    color: oklch(0.18 0.01 250);
+  }
+
+  /* Time inputs inside table */
+  .ts-time-input {
+    width: 100%;
+    min-width: 70px;
+    border: none;
+    background: transparent;
+    text-align: center;
+    font-family: "Satoshi", sans-serif;
+    font-size: 0.8rem;
+    padding: 2px 2px;
+    outline: none;
+    color: oklch(0.12 0.005 250);
+  }
+
+  .ts-time-input:focus {
+    background-color: oklch(0.96 0.01 250 / 0.5);
+    border-radius: 2px;
+  }
+
+  .ts-time-input::placeholder {
+    color: oklch(0.7 0.01 250);
+    font-size: 0.7rem;
+  }
+
+  .ts-location-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: "Satoshi", sans-serif;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+    outline: none;
+    color: oklch(0.12 0.005 250);
+    text-align: left;
+  }
+
+  .ts-location-input:focus {
+    background-color: oklch(0.96 0.01 250 / 0.5);
+    border-radius: 2px;
+  }
+
+  .ts-location-input::placeholder {
+    color: oklch(0.7 0.01 250);
+    font-size: 0.75rem;
+  }
+
+  /* Signature field in cursive */
+  .signature-field {
+    font-family: "Dancing Script", cursive;
+    font-style: normal;
+    font-size: 1.8rem;
+    font-weight: 600;
+    border: none;
+    border-bottom: 2px solid oklch(0.12 0.005 250);
+    background: transparent;
+    outline: none;
+    width: 100%;
+    color: oklch(0.12 0.005 250);
+    padding: 4px 2px;
+    line-height: 1.2;
+  }
+
+  .signature-field::placeholder {
+    color: oklch(0.75 0.01 250);
+    font-style: italic;
+  }
+
+  /* Total pay period hours box */
+  .total-hours-box {
+    display: inline-block;
+    border: 2px solid oklch(0.12 0.005 250);
+    padding: 6px 16px;
+    font-family: "Geist Mono", monospace;
+    font-weight: 700;
+    font-size: 1.3rem;
+    min-width: 90px;
+    text-align: center;
+    color: oklch(0.12 0.005 250);
+    background: oklch(1.0 0 0);
+  }
+
+  /* Disclaimer box */
+  .disclaimer-box {
+    border: 1px solid oklch(0.7 0.01 250);
+    padding: 12px 14px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: oklch(0.12 0.005 250);
+  }
+}
+
+/* Print styles */
+@media print {
+  @page {
+    margin: 0.3in;
+    size: letter portrait;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide all chrome */
+  .no-print,
+  header,
+  footer,
+  nav {
+    display: none !important;
+  }
+
+  /* Outer print wrapper */
+  .print-page {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Form container — strip all padding/shadow/max-width */
+  .bg-white.border.shadow-paper,
+  .bg-white {
+    padding: 8px !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Title section */
+  .text-center.mb-5.pb-3 {
+    margin-bottom: 6px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .text-center.mb-5.pb-3 h1 {
+    font-size: 1.6rem !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Header fields grid */
+  .grid.grid-cols-2.gap-x-8.gap-y-3.mb-5 {
+    gap: 6px 20px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .grid.grid-cols-2.gap-x-8.gap-y-3.mb-5 label {
+    font-size: 0.75rem !important;
+  }
+
+  .grid.grid-cols-2.gap-x-8.gap-y-3.mb-5 input {
+    font-size: 0.85rem !important;
+  }
+
+  /* Spacer div between week tables */
+  .mt-4 {
+    margin-top: 8px !important;
+  }
+
+  /* Total pay period row */
+  .mt-4.border.border-border.p-3 {
+    margin-top: 8px !important;
+    padding: 6px 10px !important;
+  }
+
+  .mt-4.border.border-border.p-3 span {
+    font-size: 0.82rem !important;
+  }
+
+  /* Signature section */
+  .mt-5.grid.grid-cols-2.gap-8 {
+    margin-top: 8px !important;
+    gap: 20px !important;
+  }
+
+  .mt-5.grid.grid-cols-2.gap-8 p {
+    font-size: 0.75rem !important;
+    margin-bottom: 2px !important;
+  }
+
+  .mt-5.grid.grid-cols-2.gap-8 input {
+    font-size: 1.5rem !important;
+  }
+
+  /* Disclaimer box */
+  .disclaimer-box {
+    font-size: 0.78rem !important;
+    padding: 8px 12px !important;
+    line-height: 1.5 !important;
+    margin-top: 8px !important;
+  }
+
+  .disclaimer-box .mt-1 {
+    margin-top: 3px !important;
+  }
+
+  /* ── Table overrides ── */
+  .ts-table {
+    font-size: 0.82rem !important;
+  }
+
+  .ts-table th {
+    font-size: 0.75rem !important;
+    padding: 4px 5px !important;
+  }
+
+  .ts-table td {
+    padding: 4px 5px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .ts-table .week-header-row td {
+    padding: 6px 10px !important;
+    font-size: 0.88rem !important;
+  }
+
+  .ts-table .total-row td {
+    padding: 4px 8px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .ts-table .total-row td:last-child {
+    font-size: 0.88rem !important;
+  }
+
+  .ts-table td.hours-cell {
+    font-size: 0.82rem !important;
+    min-width: 0 !important;
+  }
+
+  /* Input fields inside table */
+  .ts-time-input,
+  .ts-location-input {
+    font-size: 0.82rem !important;
+    min-width: 0 !important;
+    color: black !important;
+  }
+
+  .ts-time-input::placeholder,
+  .ts-location-input::placeholder,
+  .signature-field::placeholder {
+    color: transparent !important;
+  }
+
+  .signature-field {
+    color: black !important;
+    font-size: 1.5rem !important;
+    padding: 2px 2px !important;
+  }
+
+  /* Total hours box */
+  .total-hours-box {
+    font-size: 1.1rem !important;
+    padding: 4px 12px !important;
+    min-width: 80px !important;
+  }
+
+  /* Prevent any page break within the form */
+  .print-page,
+  .bg-white,
+  .ts-table,
+  .disclaimer-box {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 }

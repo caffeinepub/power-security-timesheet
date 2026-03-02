@@ -1,672 +1,583 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  CheckCircle,
-  Edit2,
-  Filter,
-  Loader2,
-  Plus,
-  Trash2,
-  XCircle,
-} from "lucide-react";
-import { motion } from "motion/react";
-import { useMemo, useState } from "react";
+import { Loader2, Printer } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { TimesheetEntry } from "../backend.d";
+import { useAddEntry, useUpdateEntry } from "../hooks/useQueries";
 import {
-  useActiveEmployees,
-  useAddEntry,
-  useDeleteEntry,
-  useEntries,
-  useUpdateEntry,
-  useUpdateEntryStatus,
-} from "../hooks/useQueries";
-import {
-  calcHours,
-  formatDate,
-  formatTime,
-  todayISO,
+  calcRowHours,
+  formatDateUS,
+  getCurrentPayPeriodStart,
+  getPayPeriodDates,
+  getPayPeriodEnd,
 } from "../utils/timesheet";
 
-function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === "Approved"
-      ? "status-badge-approved"
-      : status === "Rejected"
-        ? "status-badge-rejected"
-        : "status-badge-pending";
-  return (
-    <span className={`${cls} text-xs px-2 py-0.5 rounded-full font-medium`}>
-      {status}
-    </span>
-  );
+// Day labels for 7 rows per week
+const DAY_LABELS = ["M", "T", "W", "TH", "F", "SA", "SU"];
+
+export interface WeekRow {
+  jobLocation: string;
+  date: string; // YYYY-MM-DD
+  workStart: string;
+  lunchOut: string;
+  lunchIn: string;
+  workEnd: string;
 }
 
-interface EntryFormData {
-  employeeId: string;
-  date: string;
-  clockIn: string;
-  clockOut: string;
-  site: string;
-  notes: string;
+export interface TimesheetFormData {
+  lastName: string;
+  firstName: string;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  week1Rows: WeekRow[];
+  week2Rows: WeekRow[];
+  signatureText: string;
+  dateSigned: string;
 }
 
-const defaultForm: EntryFormData = {
-  employeeId: "",
-  date: todayISO(),
-  clockIn: "08:00",
-  clockOut: "16:00",
-  site: "",
-  notes: "",
-};
+function makeDefaultRows(dates: string[]): WeekRow[] {
+  return dates.map((date) => ({
+    jobLocation: "",
+    date,
+    workStart: "",
+    lunchOut: "",
+    lunchIn: "",
+    workEnd: "",
+  }));
+}
 
-export default function TimesheetsPage() {
-  const { data: entries = [], isLoading: entriesLoading } = useEntries();
-  const { data: activeEmployees = [], isLoading: empLoading } =
-    useActiveEmployees();
+function makeDefaultForm(): TimesheetFormData {
+  const start = getCurrentPayPeriodStart();
+  const end = getPayPeriodEnd(start);
+  const { week1, week2 } = getPayPeriodDates(start);
+  return {
+    lastName: "",
+    firstName: "",
+    payPeriodStart: start,
+    payPeriodEnd: end,
+    week1Rows: makeDefaultRows(week1),
+    week2Rows: makeDefaultRows(week2),
+    signatureText: "Sam Getchell",
+    dateSigned: "",
+  };
+}
+
+interface Props {
+  loadedEntryId?: bigint | null;
+  loadedData?: TimesheetFormData | null;
+  onSaved?: () => void;
+}
+
+export default function TimesheetsPage({
+  loadedEntryId,
+  loadedData,
+  onSaved,
+}: Props) {
+  const [form, setForm] = useState<TimesheetFormData>(makeDefaultForm());
 
   const addEntry = useAddEntry();
   const updateEntry = useUpdateEntry();
-  const deleteEntry = useDeleteEntry();
-  const updateStatus = useUpdateEntryStatus();
 
-  const [filterEmployee, setFilterEmployee] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const isSaving = addEntry.isPending || updateEntry.isPending;
 
-  // Entry form modal
-  const [entryModalOpen, setEntryModalOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null);
-  const [form, setForm] = useState<EntryFormData>(defaultForm);
-  const [formErrors, setFormErrors] = useState<Partial<EntryFormData>>({});
+  // When loadedData changes from parent, populate the form
+  useEffect(() => {
+    if (loadedData) {
+      setForm(loadedData);
+    }
+  }, [loadedData]);
 
-  // Delete confirm modal
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState<bigint | null>(null);
-
-  const isLoading = entriesLoading || empLoading;
-
-  // Employee name lookup
-  const employeeMap = useMemo(
-    () => new Map(activeEmployees.map((e) => [e.id.toString(), e.name])),
-    [activeEmployees],
-  );
-
-  // All employees (include inactive ones referenced in entries)
-  const allEntriesEmployees = useMemo(() => {
-    const ids = new Set(entries.map((e) => e.employeeId.toString()));
-    return Array.from(ids).map((id) => ({
-      id,
-      name: employeeMap.get(id) ?? `Employee #${id}`,
-    }));
-  }, [entries, employeeMap]);
-
-  const filtered = useMemo(() => {
-    return entries
-      .filter((e) => {
-        if (
-          filterEmployee !== "all" &&
-          e.employeeId.toString() !== filterEmployee
-        )
-          return false;
-        if (filterStatus !== "all" && e.status !== filterStatus) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [entries, filterEmployee, filterStatus]);
-
-  function openAddModal() {
-    setEditingEntry(null);
-    setForm({ ...defaultForm, date: todayISO() });
-    setFormErrors({});
-    setEntryModalOpen(true);
-  }
-
-  function openEditModal(entry: TimesheetEntry) {
-    setEditingEntry(entry);
-    setForm({
-      employeeId: entry.employeeId.toString(),
-      date: entry.date,
-      clockIn: entry.clockIn,
-      clockOut: entry.clockOut,
-      site: entry.site,
-      notes: entry.notes,
+  // Re-generate dates when payPeriodStart changes
+  const handlePayPeriodStartChange = useCallback((newStart: string) => {
+    const newEnd = getPayPeriodEnd(newStart);
+    const { week1, week2 } = getPayPeriodDates(newStart);
+    setForm((prev) => {
+      // Preserve any filled-in data but update dates
+      const mergeRows = (existing: WeekRow[], newDates: string[]): WeekRow[] =>
+        newDates.map((date, i) => ({
+          ...(existing[i] ?? {
+            jobLocation: "",
+            workStart: "",
+            lunchOut: "",
+            lunchIn: "",
+            workEnd: "",
+          }),
+          date,
+        }));
+      return {
+        ...prev,
+        payPeriodStart: newStart,
+        payPeriodEnd: newEnd,
+        week1Rows: mergeRows(prev.week1Rows, week1),
+        week2Rows: mergeRows(prev.week2Rows, week2),
+      };
     });
-    setFormErrors({});
-    setEntryModalOpen(true);
+  }, []);
+
+  function updateWeek1Row(idx: number, field: keyof WeekRow, value: string) {
+    setForm((prev) => {
+      const rows = [...prev.week1Rows];
+      rows[idx] = { ...rows[idx], [field]: value };
+      return { ...prev, week1Rows: rows };
+    });
   }
 
-  function validateForm(): boolean {
-    const errors: Partial<EntryFormData> = {};
-    if (!form.employeeId) errors.employeeId = "Required";
-    if (!form.date) errors.date = "Required";
-    if (!form.clockIn) errors.clockIn = "Required";
-    if (!form.clockOut) errors.clockOut = "Required";
-    if (!form.site.trim()) errors.site = "Required";
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  function updateWeek2Row(idx: number, field: keyof WeekRow, value: string) {
+    setForm((prev) => {
+      const rows = [...prev.week2Rows];
+      rows[idx] = { ...rows[idx], [field]: value };
+      return { ...prev, week2Rows: rows };
+    });
   }
 
-  async function handleSubmitEntry() {
-    if (!validateForm()) return;
+  // Calculate hours for a single row
+  const rowHours = useCallback((row: WeekRow): number | null => {
+    if (!row.workStart || !row.workEnd) return null;
+    return calcRowHours(row.workStart, row.workEnd, row.lunchOut, row.lunchIn);
+  }, []);
 
-    const hours = calcHours(form.clockIn, form.clockOut);
-    const employeeId = BigInt(form.employeeId);
+  const week1Total = useMemo(() => {
+    return form.week1Rows.reduce((sum, row) => {
+      const h = rowHours(row);
+      return sum + (h ?? 0);
+    }, 0);
+  }, [form.week1Rows, rowHours]);
+
+  const week2Total = useMemo(() => {
+    return form.week2Rows.reduce((sum, row) => {
+      const h = rowHours(row);
+      return sum + (h ?? 0);
+    }, 0);
+  }, [form.week2Rows, rowHours]);
+
+  const totalPayPeriodHours = week1Total + week2Total;
+
+  async function handleSave() {
+    if (!form.lastName.trim() && !form.firstName.trim()) {
+      toast.error("Please enter an employee name before saving.");
+      return;
+    }
+
+    const notes = JSON.stringify({
+      lastName: form.lastName,
+      firstName: form.firstName,
+      payPeriodStart: form.payPeriodStart,
+      payPeriodEnd: form.payPeriodEnd,
+      week1Rows: form.week1Rows,
+      week2Rows: form.week2Rows,
+      signatureText: form.signatureText,
+      dateSigned: form.dateSigned,
+    });
+
+    const site = `${form.lastName.trim()},${form.firstName.trim()}`;
 
     try {
-      if (editingEntry) {
+      if (loadedEntryId) {
         await updateEntry.mutateAsync({
-          id: editingEntry.id,
-          employeeId,
-          date: form.date,
-          clockIn: form.clockIn,
-          clockOut: form.clockOut,
-          site: form.site.trim(),
-          notes: form.notes.trim(),
-          hoursWorked: hours,
-          status: editingEntry.status,
+          id: loadedEntryId,
+          employeeId: BigInt(0),
+          date: form.payPeriodStart || new Date().toISOString().split("T")[0],
+          clockIn: form.payPeriodStart,
+          clockOut: form.payPeriodEnd,
+          site,
+          notes,
+          hoursWorked: totalPayPeriodHours,
+          status: "Pending",
         });
-        toast.success("Entry updated successfully");
+        toast.success("Timesheet updated successfully.");
       } else {
         await addEntry.mutateAsync({
-          employeeId,
-          date: form.date,
-          clockIn: form.clockIn,
-          clockOut: form.clockOut,
-          site: form.site.trim(),
-          notes: form.notes.trim(),
-          hoursWorked: hours,
+          employeeId: BigInt(0),
+          date: form.payPeriodStart || new Date().toISOString().split("T")[0],
+          clockIn: form.payPeriodStart,
+          clockOut: form.payPeriodEnd,
+          site,
+          notes,
+          hoursWorked: totalPayPeriodHours,
         });
-        toast.success("Entry added successfully");
+        toast.success("Timesheet saved successfully.");
+        setForm(makeDefaultForm());
       }
-      setEntryModalOpen(false);
+      onSaved?.();
     } catch {
-      toast.error("Failed to save entry");
+      toast.error("Failed to save timesheet. Please try again.");
     }
   }
 
-  async function handleDelete() {
-    if (!deletingId) return;
-    try {
-      await deleteEntry.mutateAsync(deletingId);
-      toast.success("Entry deleted");
-      setDeleteDialogOpen(false);
-      setDeletingId(null);
-    } catch {
-      toast.error("Failed to delete entry");
-    }
+  function handlePrint() {
+    window.print();
   }
 
-  async function handleApprove(id: bigint) {
-    try {
-      await updateStatus.mutateAsync({ id, status: "Approved" });
-      toast.success("Entry approved");
-    } catch {
-      toast.error("Failed to approve entry");
-    }
+  function handleNewForm() {
+    setForm(makeDefaultForm());
+    onSaved?.();
   }
-
-  async function handleReject(id: bigint) {
-    try {
-      await updateStatus.mutateAsync({ id, status: "Rejected" });
-      toast.success("Entry rejected");
-    } catch {
-      toast.error("Failed to reject entry");
-    }
-  }
-
-  const isPending = addEntry.isPending || updateEntry.isPending;
-
-  const hoursPreview =
-    form.clockIn && form.clockOut
-      ? calcHours(form.clockIn, form.clockOut)
-      : null;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
-            Timesheets
-          </h2>
-          <p className="text-muted-foreground text-sm mt-1">
-            Manage and review all timesheet entries
-          </p>
+    <div className="print-page">
+      {/* Print/Save actions - hidden when printing */}
+      <div className="no-print flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          {loadedEntryId && (
+            <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+              Editing saved timesheet
+            </span>
+          )}
+          {loadedEntryId && (
+            <button
+              type="button"
+              onClick={handleNewForm}
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Start new
+            </button>
+          )}
         </div>
-        <Button
-          data-ocid="timesheets.add_entry.button"
-          onClick={openAddModal}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2 shadow-glow-sm w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Add Entry
-        </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          <Button
+            data-ocid="timesheet.print.button"
+            variant="outline"
+            size="sm"
+            onClick={handlePrint}
+            className="gap-1.5 border-border text-sm"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Print / Save as PDF
+          </Button>
+          <Button
+            data-ocid="timesheet.save.button"
+            size="sm"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 text-sm"
+          >
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            {isSaving
+              ? "Saving…"
+              : loadedEntryId
+                ? "Update Timesheet"
+                : "Save Timesheet"}
+          </Button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card className="border-border bg-card">
-        <CardContent className="py-3 px-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <Filter className="w-4 h-4 text-muted-foreground flex-shrink-0 hidden sm:block" />
-            <div className="flex flex-wrap gap-3 w-full">
-              <Select value={filterEmployee} onValueChange={setFilterEmployee}>
-                <SelectTrigger className="w-full sm:w-48 bg-muted/30 border-border text-sm">
-                  <SelectValue placeholder="All Employees" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Employees</SelectItem>
-                  {allEntriesEmployees.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full sm:w-40 bg-muted/30 border-border text-sm">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Approved">Approved</SelectItem>
-                  <SelectItem value="Rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-              {(filterEmployee !== "all" || filterStatus !== "all") && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setFilterEmployee("all");
-                    setFilterStatus("all");
-                  }}
-                  className="text-muted-foreground hover:text-foreground text-xs"
-                >
-                  Clear filters
-                </Button>
-              )}
-            </div>
+      {/* THE FORM */}
+      <div className="bg-white border border-border shadow-paper p-6 sm:p-8 max-w-5xl mx-auto">
+        {/* Title */}
+        <div className="text-center mb-5 pb-3 border-b-2 border-foreground">
+          <h1 className="font-display text-2xl sm:text-3xl font-black tracking-widest uppercase text-foreground">
+            Employee Time Sheet
+          </h1>
+        </div>
+
+        {/* Header fields */}
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-5">
+          {/* Last Name */}
+          <div className="flex items-end gap-2">
+            <label
+              htmlFor="ts-last-name"
+              className="font-display text-xs font-bold uppercase tracking-wide whitespace-nowrap shrink-0"
+            >
+              Last Name:
+            </label>
+            <input
+              id="ts-last-name"
+              data-ocid="timesheet.last_name.input"
+              type="text"
+              value={form.lastName}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, lastName: e.target.value }))
+              }
+              className="flex-1 border-b border-foreground bg-transparent outline-none text-sm pb-0.5 font-sans min-w-0"
+            />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Table */}
-      <Card data-ocid="timesheets.table" className="border-border bg-card">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div
-              className="flex items-center justify-center py-16"
-              data-ocid="timesheets.loading_state"
+          {/* First Name */}
+          <div className="flex items-end gap-2">
+            <label
+              htmlFor="ts-first-name"
+              className="font-display text-xs font-bold uppercase tracking-wide whitespace-nowrap shrink-0"
             >
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div
-              className="text-center py-16 text-muted-foreground text-sm"
-              data-ocid="timesheets.empty_state"
-            >
-              No timesheet entries found.
-              {(filterEmployee !== "all" || filterStatus !== "all") && (
-                <span> Try clearing the filters.</span>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-muted/30 border-b border-border">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Employee
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
-                      Site
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                      Clock In
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">
-                      Clock Out
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-                      Hours
-                    </th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((entry, idx) => {
-                    const empName =
-                      employeeMap.get(entry.employeeId.toString()) ??
-                      `#${entry.employeeId}`;
-                    const displayIdx = idx + 1;
-                    return (
-                      <motion.tr
-                        key={entry.id.toString()}
-                        data-ocid={`timesheets.entry.item.${displayIdx}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: idx * 0.02 }}
-                        className="border-t border-border hover:bg-muted/20 transition-colors group"
-                      >
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          {empName}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                          {formatDate(entry.date)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
-                          {entry.site}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs hidden md:table-cell">
-                          {formatTime(entry.clockIn)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs hidden md:table-cell">
-                          {formatTime(entry.clockOut)}
-                        </td>
-                        <td className="px-4 py-3 text-foreground font-mono text-xs hidden lg:table-cell">
-                          {entry.hoursWorked.toFixed(2)}h
-                        </td>
-                        <td className="px-4 py-3">
-                          <StatusBadge status={entry.status} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            {entry.status === "Pending" && (
-                              <>
-                                <Button
-                                  data-ocid={`timesheets.approve.button.${displayIdx}`}
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                                  title="Approve"
-                                  onClick={() => handleApprove(entry.id)}
-                                  disabled={updateStatus.isPending}
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  data-ocid={`timesheets.reject.button.${displayIdx}`}
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                                  title="Reject"
-                                  onClick={() => handleReject(entry.id)}
-                                  disabled={updateStatus.isPending}
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </Button>
-                              </>
-                            )}
-                            <Button
-                              data-ocid={`timesheets.edit_entry.button.${displayIdx}`}
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                              title="Edit"
-                              onClick={() => openEditModal(entry)}
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              data-ocid={`timesheets.delete_entry.button.${displayIdx}`}
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title="Delete"
-                              onClick={() => {
-                                setDeletingId(entry.id);
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Entry Modal */}
-      <Dialog open={entryModalOpen} onOpenChange={setEntryModalOpen}>
-        <DialogContent
-          data-ocid="entry_form.dialog"
-          className="sm:max-w-[500px] bg-card border-border"
-        >
-          <DialogHeader>
-            <DialogTitle className="font-display text-lg">
-              {editingEntry ? "Edit Entry" : "Add Timesheet Entry"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Employee */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-muted-foreground">
-                Employee *
-              </Label>
-              <Select
-                value={form.employeeId}
-                onValueChange={(v) => setForm((f) => ({ ...f, employeeId: v }))}
-              >
-                <SelectTrigger
-                  data-ocid="entry_form.employee.select"
-                  className={`bg-muted/30 border-border ${formErrors.employeeId ? "border-destructive" : ""}`}
-                >
-                  <SelectValue placeholder="Select employee…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeEmployees.map((e) => (
-                    <SelectItem key={e.id.toString()} value={e.id.toString()}>
-                      {e.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formErrors.employeeId && (
-                <p className="text-xs text-destructive">
-                  {formErrors.employeeId}
-                </p>
-              )}
-            </div>
-
-            {/* Date */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-muted-foreground">Date *</Label>
-              <Input
-                data-ocid="entry_form.date.input"
-                type="date"
-                value={form.date}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, date: e.target.value }))
-                }
-                className={`bg-muted/30 border-border ${formErrors.date ? "border-destructive" : ""}`}
-              />
-              {formErrors.date && (
-                <p className="text-xs text-destructive">{formErrors.date}</p>
-              )}
-            </div>
-
-            {/* Clock In/Out */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm text-muted-foreground">
-                  Clock In *
-                </Label>
-                <Input
-                  data-ocid="entry_form.clock_in.input"
-                  type="time"
-                  value={form.clockIn}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, clockIn: e.target.value }))
-                  }
-                  className={`bg-muted/30 border-border ${formErrors.clockIn ? "border-destructive" : ""}`}
-                />
-                {formErrors.clockIn && (
-                  <p className="text-xs text-destructive">
-                    {formErrors.clockIn}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm text-muted-foreground">
-                  Clock Out *
-                </Label>
-                <Input
-                  data-ocid="entry_form.clock_out.input"
-                  type="time"
-                  value={form.clockOut}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, clockOut: e.target.value }))
-                  }
-                  className={`bg-muted/30 border-border ${formErrors.clockOut ? "border-destructive" : ""}`}
-                />
-                {formErrors.clockOut && (
-                  <p className="text-xs text-destructive">
-                    {formErrors.clockOut}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Hours preview */}
-            {hoursPreview !== null && (
-              <p className="text-xs text-primary font-medium">
-                ⏱ Calculated hours:{" "}
-                <span className="font-mono">{hoursPreview.toFixed(2)}h</span>
-              </p>
-            )}
-
-            {/* Site */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-muted-foreground">Site *</Label>
-              <Input
-                data-ocid="entry_form.site.input"
-                placeholder="e.g. Main Gate, Warehouse…"
-                value={form.site}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, site: e.target.value }))
-                }
-                className={`bg-muted/30 border-border ${formErrors.site ? "border-destructive" : ""}`}
-              />
-              {formErrors.site && (
-                <p className="text-xs text-destructive">{formErrors.site}</p>
-              )}
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-1.5">
-              <Label className="text-sm text-muted-foreground">Notes</Label>
-              <Textarea
-                data-ocid="entry_form.notes.textarea"
-                placeholder="Optional shift notes…"
-                value={form.notes}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, notes: e.target.value }))
-                }
-                className="bg-muted/30 border-border resize-none"
-                rows={3}
-              />
-            </div>
+              First Name:
+            </label>
+            <input
+              id="ts-first-name"
+              data-ocid="timesheet.first_name.input"
+              type="text"
+              value={form.firstName}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, firstName: e.target.value }))
+              }
+              className="flex-1 border-b border-foreground bg-transparent outline-none text-sm pb-0.5 font-sans min-w-0"
+            />
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              data-ocid="entry_form.cancel_button"
-              variant="outline"
-              onClick={() => setEntryModalOpen(false)}
-              className="border-border"
+          {/* Pay Period Start */}
+          <div className="flex items-end gap-2">
+            <label
+              htmlFor="ts-pp-start"
+              className="font-display text-xs font-bold uppercase tracking-wide whitespace-nowrap shrink-0"
             >
-              Cancel
-            </Button>
-            <Button
-              data-ocid="entry_form.submit_button"
-              onClick={handleSubmitEntry}
-              disabled={isPending}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              Pay Period Start Date (Monday):
+            </label>
+            <input
+              id="ts-pp-start"
+              data-ocid="timesheet.pay_period_start.input"
+              type="date"
+              value={form.payPeriodStart}
+              onChange={(e) => handlePayPeriodStartChange(e.target.value)}
+              className="flex-1 border-b border-foreground bg-transparent outline-none text-sm pb-0.5 font-mono min-w-0"
+            />
+          </div>
+          {/* Pay Period End */}
+          <div className="flex items-end gap-2">
+            <label
+              htmlFor="ts-pp-end"
+              className="font-display text-xs font-bold uppercase tracking-wide whitespace-nowrap shrink-0"
             >
-              {isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Saving…
-                </>
-              ) : editingEntry ? (
-                "Update Entry"
-              ) : (
-                "Add Entry"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              Pay Period End Date (Sunday):
+            </label>
+            <input
+              id="ts-pp-end"
+              data-ocid="timesheet.pay_period_end.input"
+              type="date"
+              value={form.payPeriodEnd}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, payPeriodEnd: e.target.value }))
+              }
+              className="flex-1 border-b border-foreground bg-transparent outline-none text-sm pb-0.5 font-mono min-w-0"
+            />
+          </div>
+        </div>
 
-      {/* Delete Confirm Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent
-          data-ocid="delete_confirm.dialog"
-          className="sm:max-w-[380px] bg-card border-border"
-        >
-          <DialogHeader>
-            <DialogTitle className="font-display text-lg">
-              Delete Entry
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
-            Are you sure you want to delete this timesheet entry? This action
-            cannot be undone.
+        {/* WEEK 1 TABLE */}
+        <WeekTable
+          weekLabel="WEEK 1"
+          rows={form.week1Rows}
+          weekTotal={week1Total}
+          rowHoursFn={rowHours}
+          onRowChange={updateWeek1Row}
+          weekOcidPrefix="timesheet.week1"
+        />
+
+        <div className="mt-4" />
+
+        {/* WEEK 2 TABLE */}
+        <WeekTable
+          weekLabel="WEEK 2"
+          rows={form.week2Rows}
+          weekTotal={week2Total}
+          rowHoursFn={rowHours}
+          onRowChange={updateWeek2Row}
+          weekOcidPrefix="timesheet.week2"
+        />
+
+        {/* TOTAL PAY PERIOD HOURS */}
+        <div className="mt-4 border border-border p-3 flex items-center justify-end gap-4">
+          <span className="font-display font-black uppercase tracking-widest text-sm text-foreground">
+            Total Pay Period Hours:
+          </span>
+          <div className="total-hours-box">
+            {totalPayPeriodHours.toFixed(2)}
+          </div>
+        </div>
+
+        {/* SIGNATURE & DATE */}
+        <div className="mt-5 grid grid-cols-2 gap-8">
+          <div>
+            <p className="font-display text-xs font-bold uppercase tracking-wide mb-1">
+              Employee Signature:
+            </p>
+            <input
+              data-ocid="timesheet.signature.input"
+              type="text"
+              value={form.signatureText}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, signatureText: e.target.value }))
+              }
+              placeholder="Sign here"
+              className="signature-field"
+            />
+          </div>
+          <div>
+            <p className="font-display text-xs font-bold uppercase tracking-wide mb-1">
+              Date:
+            </p>
+            <input
+              data-ocid="timesheet.date_signed.input"
+              type="text"
+              value={form.dateSigned}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, dateSigned: e.target.value }))
+              }
+              placeholder={formatDateUS(new Date().toISOString().split("T")[0])}
+              className="w-full border-b-2 border-foreground bg-transparent outline-none text-sm pb-1 font-mono"
+            />
+          </div>
+        </div>
+
+        {/* DISCLAIMER BOX */}
+        <div className="disclaimer-box mt-5">
+          <p>
+            <strong>Disclaimer:</strong>{" "}
+            <em>
+              "I took my required meal periods and rest breaks for every shift
+              that I worked"
+            </em>
           </p>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              data-ocid="delete_confirm.cancel_button"
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              className="border-border"
+          <p className="mt-1 font-bold">
+            Time sheets are due Monday of the pay week before 12:00pm. NO
+            EXCEPTIONS!
+          </p>
+          <p className="mt-1">
+            Submit your time sheet via text message to: 951-227-8834 or via
+            email to:{" "}
+            <a href="mailto:sheryl@pssca.com" className="underline">
+              sheryl@pssca.com
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── WeekTable Sub-component ──────────────────────────────────────────────────
+
+interface WeekTableProps {
+  weekLabel: string;
+  rows: WeekRow[];
+  weekTotal: number;
+  rowHoursFn: (row: WeekRow) => number | null;
+  onRowChange: (idx: number, field: keyof WeekRow, value: string) => void;
+  weekOcidPrefix: string;
+}
+
+function WeekTable({
+  weekLabel,
+  rows,
+  weekTotal,
+  rowHoursFn,
+  onRowChange,
+  weekOcidPrefix,
+}: WeekTableProps) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="ts-table">
+        <tbody>
+          {/* Week header row */}
+          <tr className="week-header-row">
+            <td colSpan={8}>{weekLabel}</td>
+          </tr>
+          {/* Column header row */}
+          <tr>
+            <th style={{ width: "15%" }}>Job Location</th>
+            <th style={{ width: "5%" }}>Day</th>
+            <th style={{ width: "10%" }}>Date</th>
+            <th style={{ width: "13%" }}>Work Start Time</th>
+            <th style={{ width: "13%" }}>Lunch Out Time</th>
+            <th style={{ width: "13%" }}>Lunch In Time</th>
+            <th style={{ width: "13%" }}>Work End Time</th>
+            <th style={{ width: "11%" }}>Total Hours Worked</th>
+          </tr>
+          {/* Data rows */}
+          {rows.map((row, idx) => {
+            const hours = rowHoursFn(row);
+            const dayLabel = DAY_LABELS[idx] ?? "";
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: rows are positionally fixed (7 per week)
+              <tr key={idx} data-ocid={`${weekOcidPrefix}.row.${idx + 1}`}>
+                <td className="location-cell">
+                  <input
+                    data-ocid={`${weekOcidPrefix}.location.input.${idx + 1}`}
+                    type="text"
+                    value={row.jobLocation}
+                    onChange={(e) =>
+                      onRowChange(idx, "jobLocation", e.target.value)
+                    }
+                    placeholder="Location"
+                    className="ts-location-input"
+                  />
+                </td>
+                <td style={{ fontWeight: 700, fontSize: "0.8rem" }}>
+                  {dayLabel}
+                </td>
+                <td
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "0.78rem",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatDateUS(row.date)}
+                </td>
+                <td>
+                  <input
+                    data-ocid={`${weekOcidPrefix}.work_start.input.${idx + 1}`}
+                    type="text"
+                    value={row.workStart}
+                    onChange={(e) =>
+                      onRowChange(idx, "workStart", e.target.value)
+                    }
+                    placeholder="e.g. 7:30 PM"
+                    className="ts-time-input"
+                  />
+                </td>
+                <td>
+                  <input
+                    data-ocid={`${weekOcidPrefix}.lunch_out.input.${idx + 1}`}
+                    type="text"
+                    value={row.lunchOut}
+                    onChange={(e) =>
+                      onRowChange(idx, "lunchOut", e.target.value)
+                    }
+                    placeholder="e.g. 12:00 PM"
+                    className="ts-time-input"
+                  />
+                </td>
+                <td>
+                  <input
+                    data-ocid={`${weekOcidPrefix}.lunch_in.input.${idx + 1}`}
+                    type="text"
+                    value={row.lunchIn}
+                    onChange={(e) =>
+                      onRowChange(idx, "lunchIn", e.target.value)
+                    }
+                    placeholder="e.g. 1:00 PM"
+                    className="ts-time-input"
+                  />
+                </td>
+                <td>
+                  <input
+                    data-ocid={`${weekOcidPrefix}.work_end.input.${idx + 1}`}
+                    type="text"
+                    value={row.workEnd}
+                    onChange={(e) =>
+                      onRowChange(idx, "workEnd", e.target.value)
+                    }
+                    placeholder="e.g. 3:30 AM"
+                    className="ts-time-input"
+                  />
+                </td>
+                <td className="hours-cell">
+                  {hours !== null ? hours.toFixed(2) : ""}
+                </td>
+              </tr>
+            );
+          })}
+          {/* Total row */}
+          <tr className="total-row">
+            <td
+              colSpan={7}
+              style={{
+                textAlign: "right",
+                paddingRight: "12px",
+                fontFamily: "var(--font-display)",
+              }}
             >
-              Cancel
-            </Button>
-            <Button
-              data-ocid="delete_confirm.confirm_button"
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteEntry.isPending}
-            >
-              {deleteEntry.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {weekLabel} TOTAL:
+            </td>
+            <td className="hours-cell">{weekTotal.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

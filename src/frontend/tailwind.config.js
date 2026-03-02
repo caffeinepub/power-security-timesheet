@@ -18,6 +18,8 @@ export default {
       fontFamily: {
         display: ["Cabinet Grotesk", "sans-serif"],
         sans: ["Satoshi", "sans-serif"],
+        mono: ["Geist Mono", "monospace"],
+        script: ["Crimson Pro", "serif"],
       },
       colors: {
         border: "oklch(var(--border))",
@@ -77,9 +79,10 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        xs: "0 1px 2px 0 rgba(0,0,0,0.1)",
-        glow: "0 0 20px oklch(0.78 0.16 65 / 0.2)",
-        "glow-sm": "0 0 10px oklch(0.78 0.16 65 / 0.15)",
+        xs: "0 1px 2px 0 rgba(0,0,0,0.06)",
+        sm: "0 1px 3px 0 rgba(0,0,0,0.1)",
+        md: "0 4px 6px -1px rgba(0,0,0,0.1)",
+        paper: "0 2px 8px 0 rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)",
       },
       keyframes: {
         "accordion-down": {
