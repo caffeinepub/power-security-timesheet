@@ -178,7 +178,26 @@ export function getPayPeriodEnd(startDate: string): string {
 }
 
 /**
+ * Get the date one day after the pay period end (for employee signature date).
+ */
+export function getSignatureDate(payPeriodEnd: string): string {
+  if (!payPeriodEnd) return "";
+  const [year, month, day] = payPeriodEnd.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + 1);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+/**
+ * Day offsets for each of the 7 rows in a week.
+ * Pattern: Mon(0), Mon(0), Tue(1), Wed(2), Thu(3), Fri(4), Sun(6) — Saturday skipped.
+ */
+export const WEEK_ROW_OFFSETS = [0, 0, 1, 2, 3, 4, 6];
+
+/**
  * Given a pay period start (Monday), compute the dates for all 14 days (7 per week).
+ * Week rows follow WEEK_ROW_OFFSETS: Mon, Mon, Tue, Wed, Thu, Fri, Sun (no Saturday).
+ * Week 2 is offset by 7 days from week 1.
  */
 export function getPayPeriodDates(startDate: string): {
   week1: string[];
@@ -188,14 +207,14 @@ export function getPayPeriodDates(startDate: string): {
   const start = new Date(startDate);
   const week1: string[] = [];
   const week2: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (const offset of WEEK_ROW_OFFSETS) {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setDate(start.getDate() + offset);
     week1.push(d.toISOString().split("T")[0]);
   }
-  for (let i = 7; i < 14; i++) {
+  for (const offset of WEEK_ROW_OFFSETS) {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setDate(start.getDate() + 7 + offset);
     week2.push(d.toISOString().split("T")[0]);
   }
   return { week1, week2 };

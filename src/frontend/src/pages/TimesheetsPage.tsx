@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Loader2, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Printer } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useAddEntry, useUpdateEntry } from "../hooks/useQueries";
@@ -9,10 +9,11 @@ import {
   getCurrentPayPeriodStart,
   getPayPeriodDates,
   getPayPeriodEnd,
+  getSignatureDate,
 } from "../utils/timesheet";
 
-// Day labels for 7 rows per week
-const DAY_LABELS = ["M", "T", "W", "TH", "F", "SA", "SU"];
+// Day labels for 7 rows per week (Mon x2, Tue, Wed, Thu, Fri, Sun — no Saturday)
+const DAY_LABELS = ["M", "M", "T", "W", "TH", "F", "SU"];
 
 export interface WeekRow {
   jobLocation: string;
@@ -34,15 +35,74 @@ export interface TimesheetFormData {
   dateSigned: string;
 }
 
-function makeDefaultRows(dates: string[]): WeekRow[] {
-  return dates.map((date) => ({
-    jobLocation: "",
-    date,
-    workStart: "",
+// Pre-fill data for each of the 7 rows per week
+// Rows: Mon(H.A.), Mon(Rover), Tue(H.A.), Wed(H.A.), Thu(H.A.), Fri(H.A.), Sun(Rover)
+const WEEK_ROW_PREFILL = [
+  {
+    jobLocation: "H.A.",
+    workStart: "8:00 AM",
+    lunchOut: "12:00 PM",
+    lunchIn: "1:00 PM",
+    workEnd: "5:00 PM",
+  },
+  {
+    jobLocation: "Rover",
+    workStart: "7:30 PM",
     lunchOut: "",
     lunchIn: "",
-    workEnd: "",
-  }));
+    workEnd: "3:30 AM",
+  },
+  {
+    jobLocation: "H.A.",
+    workStart: "8:00 AM",
+    lunchOut: "12:00 PM",
+    lunchIn: "1:00 PM",
+    workEnd: "5:00 PM",
+  },
+  {
+    jobLocation: "H.A.",
+    workStart: "8:00 AM",
+    lunchOut: "12:00 PM",
+    lunchIn: "1:00 PM",
+    workEnd: "5:00 PM",
+  },
+  {
+    jobLocation: "H.A.",
+    workStart: "8:00 AM",
+    lunchOut: "12:00 PM",
+    lunchIn: "1:00 PM",
+    workEnd: "5:00 PM",
+  },
+  {
+    jobLocation: "H.A.",
+    workStart: "8:00 AM",
+    lunchOut: "12:00 PM",
+    lunchIn: "1:00 PM",
+    workEnd: "5:00 PM",
+  },
+  {
+    jobLocation: "Rover",
+    workStart: "7:30 PM",
+    lunchOut: "",
+    lunchIn: "",
+    workEnd: "3:30 AM",
+  },
+];
+
+function makeDefaultRows(dates: string[], prefill = false): WeekRow[] {
+  return dates.map((date, idx) => {
+    if (prefill && WEEK_ROW_PREFILL[idx]) {
+      return { date, ...WEEK_ROW_PREFILL[idx] };
+    }
+    return {
+      jobLocation: "",
+      date,
+      workStart: "",
+      lunchOut: "",
+      lunchIn: "",
+      workEnd: "",
+    };
+  });
 }
 
 function makeDefaultForm(): TimesheetFormData {
@@ -50,14 +110,14 @@ function makeDefaultForm(): TimesheetFormData {
   const end = getPayPeriodEnd(start);
   const { week1, week2 } = getPayPeriodDates(start);
   return {
-    lastName: "",
-    firstName: "",
+    lastName: "Getchell",
+    firstName: "Sam",
     payPeriodStart: start,
     payPeriodEnd: end,
-    week1Rows: makeDefaultRows(week1),
-    week2Rows: makeDefaultRows(week2),
+    week1Rows: makeDefaultRows(week1, true),
+    week2Rows: makeDefaultRows(week2, true),
     signatureText: "Sam Getchell",
-    dateSigned: "",
+    dateSigned: getSignatureDate(end),
   };
 }
 
@@ -94,13 +154,14 @@ export default function TimesheetsPage({
       // Preserve any filled-in data but update dates
       const mergeRows = (existing: WeekRow[], newDates: string[]): WeekRow[] =>
         newDates.map((date, i) => ({
-          ...(existing[i] ?? {
-            jobLocation: "",
-            workStart: "",
-            lunchOut: "",
-            lunchIn: "",
-            workEnd: "",
-          }),
+          ...(existing[i] ??
+            WEEK_ROW_PREFILL[i] ?? {
+              jobLocation: "",
+              workStart: "",
+              lunchOut: "",
+              lunchIn: "",
+              workEnd: "",
+            }),
           date,
         }));
       return {
@@ -109,6 +170,7 @@ export default function TimesheetsPage({
         payPeriodEnd: newEnd,
         week1Rows: mergeRows(prev.week1Rows, week1),
         week2Rows: mergeRows(prev.week2Rows, week2),
+        dateSigned: getSignatureDate(newEnd),
       };
     });
   }, []);
@@ -203,6 +265,20 @@ export default function TimesheetsPage({
     }
   }
 
+  function shiftDateByDays(dateStr: string, days: number): string {
+    const d = new Date(`${dateStr}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split("T")[0];
+  }
+
+  function handlePrevWeek() {
+    handlePayPeriodStartChange(shiftDateByDays(form.payPeriodStart, -7));
+  }
+
+  function handleNextWeek() {
+    handlePayPeriodStartChange(shiftDateByDays(form.payPeriodStart, 7));
+  }
+
   function handlePrint() {
     window.print();
   }
@@ -214,6 +290,33 @@ export default function TimesheetsPage({
 
   return (
     <div className="print-page">
+      {/* Week shift controls - hidden when printing */}
+      <div className="no-print flex items-center gap-3 mb-2 p-2 bg-muted/40 border border-border rounded">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Shift Pay Period:
+        </span>
+        <Button
+          data-ocid="timesheet.prev_week.button"
+          variant="outline"
+          size="sm"
+          onClick={handlePrevWeek}
+          className="gap-1 text-xs"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Previous Week
+        </Button>
+        <Button
+          data-ocid="timesheet.next_week.button"
+          variant="outline"
+          size="sm"
+          onClick={handleNextWeek}
+          className="gap-1 text-xs"
+        >
+          Next Week
+          <ChevronRight className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+
       {/* Print/Save actions - hidden when printing */}
       <div className="no-print flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2">
